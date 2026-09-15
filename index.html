@@ -214,6 +214,14 @@ async function loadStaff(shopId, list){
       const rv = el(`<button class="sm danger">撤銷</button>`);
       rv.onclick = ()=>reviewStaff(st.staff_id,false,shopId,list);
       acts.append(rv);
+    } else if(canReview && st.status==="revoked"){
+      if(st.account_active){
+        const rs = el(`<button class="sm">恢復</button>`);
+        rs.onclick = ()=>reviewStaff(st.staff_id,true,shopId,list);
+        acts.append(rs);
+      } else {
+        acts.append(el(`<span class="sub">帳號已刪除</span>`));
+      }
     }
     list.appendChild(c);
   });
