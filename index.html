@@ -22,6 +22,10 @@
         padding:16px;margin-bottom:12px}
   h2{font-size:.85rem;letter-spacing:.05em;color:var(--muted);text-transform:uppercase;
      margin:22px 4px 10px}
+  .tabs{display:flex;gap:2px;margin:4px 0 18px;border-bottom:1px solid var(--line)}
+  .tab{background:none;border:none;color:var(--muted);padding:10px 14px;font-weight:600;
+       border-bottom:2px solid transparent;border-radius:0;font-size:.95rem}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .title{font-weight:600}
   .sub{font-size:.85rem;color:var(--muted)}
@@ -130,11 +134,24 @@ async function renderConsole(user, me){
     <header><h1>CafeCoin 平台後台</h1>
       <button class="ghost sm" onclick="signOut()">登出</button></header>
     <div class="wrap">
-      <div class="sub" style="margin:0 4px">登入身分:${esc(me.display_name||user.email)}</div>
-      <h2>待審店家申請</h2><div id="apps"></div>
-      <h2>店家</h2><div id="shops"></div>
-      <h2>App 設定</h2><div id="settings"></div>
+      <div class="sub" style="margin:0 4px 10px">登入身分:${esc(me.display_name||user.email)}</div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="apps">待審店家</button>
+        <button class="tab" data-tab="shops">店家</button>
+        <button class="tab" data-tab="settings">App 設定</button>
+      </nav>
+      <div id="apps"></div>
+      <div id="shops" hidden></div>
+      <div id="settings" hidden></div>
     </div>`;
+  app.querySelectorAll(".tab").forEach(t=>{
+    t.onclick = ()=>{
+      app.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active", x===t));
+      ["apps","shops","settings"].forEach(id=>{
+        document.getElementById(id).hidden = (id !== t.dataset.tab);
+      });
+    };
+  });
   loadApplications();
   loadShops();
   loadSettings();
