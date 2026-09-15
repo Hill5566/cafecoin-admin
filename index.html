@@ -37,6 +37,8 @@
   button:disabled{opacity:.5;cursor:default}
   input{font:inherit;width:100%;padding:12px 14px;border:1px solid var(--line);
         border-radius:10px;background:#fff}
+  .card input{margin:4px 0 8px}
+  .card label{display:block;margin-top:8px;color:var(--muted);font-size:.85rem}
   .staff-list{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
   .staff-list .row{padding:7px 0}
   .empty{color:var(--muted);font-size:.9rem;padding:6px 4px}
@@ -131,9 +133,11 @@ async function renderConsole(user, me){
       <div class="sub" style="margin:0 4px">登入身分:${esc(me.display_name||user.email)}</div>
       <h2>待審店家申請</h2><div id="apps"></div>
       <h2>店家</h2><div id="shops"></div>
+      <h2>App 設定</h2><div id="settings"></div>
     </div>`;
   loadApplications();
   loadShops();
+  loadSettings();
 }
 
 async function loadApplications(){
@@ -164,20 +168,20 @@ async function loadApplications(){
 
 async function loadShops(){
   const box = document.getElementById("shops");
-  const { data, error } = await sb.rpc("admin_shops_with_owners");
+  const { data, error } = await sb.rpc("admin_shops_overview");
   if(error){ box.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
   if(!data.length){ box.innerHTML = `<div class="card empty">目前沒有店家</div>`; return; }
-  // 一店可能多筆(理論上一 owner);以 shop_id 群組取店名
-  const seen = new Set(); box.innerHTML = "";
+  box.innerHTML = "";
   data.forEach(s=>{
-    if(seen.has(s.shop_id)) return; seen.add(s.shop_id);
-    const owner = data.filter(x=>x.shop_id===s.shop_id)
-      .map(x=>`${esc(x.owner_name)} <span class="pill ${x.owner_status}">${statusLabel(x.owner_status)}</span>`)
-      .join("　");
+    const active = s.subscription_status==="active";
+    const until = s.subscription_valid_until
+      ? new Date(s.subscription_valid_until).toLocaleDateString("zh-TW") : "—";
+    const subPill = `<span class="pill ${active?'approved':'revoked'}">訂閱:${esc(s.subscription_status||'無')}</span>`;
     const c = el(`<div class="card">
       <div class="row">
         <div><div class="title">${esc(s.shop_name)}</div>
-          <div class="sub">負責人:${owner}</div></div>
+          <div class="sub">負責人:${esc(s.owner_names||'—')}</div>
+          <div class="sub">${subPill}　到期 ${esc(until)}${s.can_export?'　可匯出':''}</div></div>
         <button class="ghost sm" data-staff>員工 ▾</button>
       </div>
       <div class="staff-list" hidden></div></div>`);
@@ -197,24 +201,27 @@ async function loadStaff(shopId, list){
   if(!data.length){ list.innerHTML = `<div class="empty">此店沒有店員</div>`; return; }
   list.innerHTML = "";
   data.forEach(st=>{
-    const roleTag = st.role==="owner" ? `<span class="pill owner">負責人</span>` : "";
-    const canReview = st.role!=="owner";
+    const isOwner = st.role==="owner";
+    const roleTag = isOwner ? `<span class="pill owner">負責人</span>` : "";
     const c = el(`<div class="row">
       <div><span class="title">${esc(st.name)}</span> ${roleTag}
         <span class="pill ${st.status}">${statusLabel(st.status)}</span></div>
       <div class="actions"></div></div>`);
     const acts = c.querySelector(".actions");
-    if(canReview && st.status==="pending"){
+    if(st.status==="pending" && !isOwner){
       const ok = el(`<button class="sm">核准</button>`);
       const no = el(`<button class="sm danger">拒絕</button>`);
       ok.onclick = ()=>reviewStaff(st.staff_id,true,shopId,list);
       no.onclick = ()=>reviewStaff(st.staff_id,false,shopId,list);
       acts.append(ok,no);
-    } else if(canReview && st.status==="approved"){
-      const rv = el(`<button class="sm danger">撤銷</button>`);
-      rv.onclick = ()=>reviewStaff(st.staff_id,false,shopId,list);
+    } else if(st.status==="approved"){
+      const rv = el(`<button class="sm danger">${isOwner?"撤銷負責人":"撤銷"}</button>`);
+      rv.onclick = ()=>{
+        if(isOwner && !confirm(`確定撤銷「${st.name}」的負責人權限?\n(用於盜用處理,之後可恢復)`)) return;
+        reviewStaff(st.staff_id,false,shopId,list);
+      };
       acts.append(rv);
-    } else if(canReview && st.status==="revoked"){
+    } else if(st.status==="revoked"){
       if(st.account_active){
         const rs = el(`<button class="sm">恢復</button>`);
         rs.onclick = ()=>reviewStaff(st.staff_id,true,shopId,list);
@@ -241,6 +248,50 @@ async function act(card, m, fn, params){
              card.querySelectorAll("button").forEach(b=>b.disabled=false); return; }
   card.style.opacity=".5";
   setTimeout(()=>{ loadApplications(); loadShops(); }, 400);
+}
+
+/* ---------- App 設定 ---------- */
+async function loadSettings(){
+  const box = document.getElementById("settings");
+  const { data, error } = await sb.rpc("admin_get_app_settings");
+  if(error){ box.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  box.innerHTML = "";
+  (data.min_versions||[]).forEach(v=>{
+    const appName = v.app_key==="staff"?"店員 App":v.app_key==="card"?"會員卡 App":v.app_key;
+    const c = el(`<div class="card">
+      <div class="title">${esc(appName)} <span class="sub">(${esc(v.app_key)})</span></div>
+      <label>最低版本 min(低於此版強制更新)</label><input class="min" value="${esc(v.min_version||'')}">
+      <label>最新版本 latest</label><input class="latest" value="${esc(v.latest_version||'')}">
+      <label>強更訊息</label><input class="msgv" value="${esc(v.message||'')}">
+      <button class="sm" style="margin-top:6px">儲存</button><div class="m"></div></div>`);
+    const m = c.querySelector(".m");
+    c.querySelector("button").onclick = async (e)=>{
+      e.target.disabled = true; m.innerHTML = "";
+      const { error } = await sb.rpc("admin_set_min_version",{
+        p_app_key:v.app_key,
+        p_min_version:c.querySelector(".min").value.trim(),
+        p_latest_version:c.querySelector(".latest").value.trim(),
+        p_message:c.querySelector(".msgv").value.trim()});
+      e.target.disabled = false;
+      m.innerHTML = error?`<div class="msg err">${esc(error.message)}</div>`:`<div class="msg ok">已儲存</div>`;
+    };
+    box.appendChild(c);
+  });
+  (data.configs||[]).forEach(cfg=>{
+    const name = cfg.key==="staff_password_login"?"店員帳號密碼登入":cfg.key;
+    const c = el(`<div class="card"><div class="row">
+      <div><div class="title">${esc(name)}</div><div class="sub">${esc(cfg.key)}</div></div>
+      <button class="sm ${cfg.enabled?'':'ghost'}">${cfg.enabled?'開啟中':'已關閉'}</button>
+    </div><div class="m"></div></div>`);
+    const btn = c.querySelector("button"), m = c.querySelector(".m");
+    btn.onclick = async ()=>{
+      btn.disabled = true; m.innerHTML = "";
+      const { error } = await sb.rpc("admin_set_config",{p_key:cfg.key,p_enabled:!cfg.enabled});
+      if(error){ btn.disabled=false; m.innerHTML=`<div class="msg err">${esc(error.message)}</div>`; return; }
+      loadSettings();
+    };
+    box.appendChild(c);
+  });
 }
 
 sb.auth.onAuthStateChange((e)=>{ if(e==="SIGNED_IN"||e==="SIGNED_OUT") boot(); });
