@@ -79,22 +79,35 @@ function renderLogin(){
     <div class="brand">CafeCoin</div>
     <div class="sub" style="margin-bottom:28px">平台管理後台</div>
     <input id="email" type="email" placeholder="管理員 email" autocomplete="email">
-    <button id="send" style="margin-top:12px">寄送登入連結</button>
+    <input id="pw" type="password" placeholder="密碼" autocomplete="current-password" style="margin-top:10px">
+    <button id="login" style="margin-top:12px">登入</button>
+    <button id="magic" class="ghost" style="margin-top:8px">改用 Email 連結登入</button>
     <div id="m"></div>
   </div>`);
   app.appendChild(box);
-  const email = box.querySelector("#email"), m = box.querySelector("#m"), btn = box.querySelector("#send");
-  btn.onclick = async () => {
+  const email = box.querySelector("#email"), pw = box.querySelector("#pw"), m = box.querySelector("#m"),
+        loginBtn = box.querySelector("#login"), magicBtn = box.querySelector("#magic");
+  loginBtn.onclick = async () => {
+    const addr = email.value.trim();
+    if(!addr || !pw.value){ (addr?pw:email).focus(); return; }
+    loginBtn.disabled = true; m.innerHTML = "";
+    const { error } = await sb.auth.signInWithPassword({ email: addr, password: pw.value });
+    loginBtn.disabled = false;
+    if(error) m.innerHTML = `<div class="msg err">${esc(error.message)}</div>`;
+    // 成功由 onAuthStateChange -> boot() 接手
+  };
+  pw.addEventListener("keydown", e=>{ if(e.key==="Enter") loginBtn.click(); });
+  magicBtn.onclick = async () => {
     const addr = email.value.trim();
     if(!addr){ email.focus(); return; }
-    btn.disabled = true; m.innerHTML = "";
+    magicBtn.disabled = true; m.innerHTML = "";
     const { error } = await sb.auth.signInWithOtp({
       email: addr, options:{ emailRedirectTo: location.href.split("#")[0] }
     });
-    btn.disabled = false;
+    magicBtn.disabled = false;
     m.innerHTML = error
       ? `<div class="msg err">${esc(error.message)}</div>`
-      : `<div class="msg ok">登入連結已寄到 ${esc(addr)},請到信箱點連結。</div>`;
+      : `<div class="msg ok">登入連結已寄到 ${esc(addr)}。</div>`;
   };
 }
 
